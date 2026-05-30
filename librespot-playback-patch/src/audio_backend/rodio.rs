@@ -88,6 +88,7 @@ fn list_formats(device: &cpal::Device) {
         }
     };
 
+    #[cfg(not(target_os = "macos"))]
     match device.supported_output_configs() {
         Ok(mut cfgs) => {
             if let Some(first) = cfgs.next() {
@@ -176,6 +177,9 @@ fn create_sink(
     // (some devices only support 48 kHz and Rodio will resample linearly), then fall back to
     // whatever the default device config is (like mono).
     let default_config = cpal_device.default_output_config()?;
+    #[cfg(target_os = "macos")]
+    let config = default_config;
+    #[cfg(not(target_os = "macos"))]
     let config = cpal_device
         .supported_output_configs()?
         .find(|c| c.channels() == NUM_CHANNELS as cpal::ChannelCount)

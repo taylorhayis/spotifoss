@@ -83,18 +83,25 @@ impl<W: Widget<AppState>> Controller<AppState, W> for CloseTrayController {
     }
 }
 
-pub fn main_window(config: &Config) -> WindowDesc<AppState> {
-    let win = WindowDesc::new(root_widget().controller(CloseTrayController))
-        .title(compute_main_window_title)
-        .with_min_size((theme::grid(65.0), theme::grid(50.0)))
-        .window_size(config.window_size)
-        .show_titlebar(false)
-        .transparent(true);
+/// Linux/Windows use borderless transparent windows; macOS needs a native title bar
+/// so users get the traffic-light close/minimize/maximize controls.
+pub(crate) fn finish_window_desc(win: WindowDesc<AppState>) -> WindowDesc<AppState> {
     if cfg!(target_os = "macos") {
-        win.menu(menu::main_menu)
+        win.show_titlebar(true)
+            .transparent(false)
+            .menu(menu::main_menu)
     } else {
-        win
+        win.show_titlebar(false).transparent(true)
     }
+}
+
+pub fn main_window(config: &Config) -> WindowDesc<AppState> {
+    finish_window_desc(
+        WindowDesc::new(root_widget().controller(CloseTrayController))
+            .title(compute_main_window_title)
+            .with_min_size((theme::grid(65.0), theme::grid(50.0)))
+            .window_size(config.window_size),
+    )
 }
 
 pub fn preferences_window() -> WindowDesc<AppState> {
@@ -108,31 +115,21 @@ pub fn preferences_window() -> WindowDesc<AppState> {
         win_size
     };
 
-    let win = WindowDesc::new(preferences_widget())
-        .title("Preferences")
-        .window_size(win_size)
-        .resizable(false)
-        .show_titlebar(false)
-        .transparent(true);
-    if cfg!(target_os = "macos") {
-        win.menu(menu::main_menu)
-    } else {
-        win
-    }
+    finish_window_desc(
+        WindowDesc::new(preferences_widget())
+            .title("Preferences")
+            .window_size(win_size)
+            .resizable(false),
+    )
 }
 
 pub fn account_setup_window() -> WindowDesc<AppState> {
-    let win = WindowDesc::new(Overlay::bottom(account_setup_widget(), alert_widget()))
-        .title("Login")
-        .window_size((theme::grid(50.0), theme::grid(55.0)))
-        .resizable(false)
-        .show_titlebar(false)
-        .transparent(true);
-    if cfg!(target_os = "macos") {
-        win.menu(menu::main_menu)
-    } else {
-        win
-    }
+    finish_window_desc(
+        WindowDesc::new(Overlay::bottom(account_setup_widget(), alert_widget()))
+            .title("Login")
+            .window_size((theme::grid(50.0), theme::grid(55.0)))
+            .resizable(false),
+    )
 }
 
 pub fn artwork_window() -> WindowDesc<AppState> {
@@ -146,29 +143,23 @@ pub fn artwork_window() -> WindowDesc<AppState> {
         win_size
     };
 
-    let win = WindowDesc::new(artwork_widget())
-        .window_size(win_size)
-        .resizable(false)
-        .show_titlebar(false)
-        .transparent(true)
-        .title(|data: &AppState, _env: &_| {
-            data.playback
-                .now_playing
-                .as_ref()
-                .map(|np| match &np.item {
-                    Playable::Track(track) => {
-                        format!("{} - {}", track.album_name(), track.artist_name())
-                    }
-                    Playable::Episode(episode) => episode.name.to_string(),
-                })
-                .unwrap_or_else(|| "Now Playing".to_string())
-        });
-
-    if cfg!(target_os = "macos") {
-        win.menu(menu::main_menu)
-    } else {
-        win
-    }
+    finish_window_desc(
+        WindowDesc::new(artwork_widget())
+            .window_size(win_size)
+            .resizable(false)
+            .title(|data: &AppState, _env: &_| {
+                data.playback
+                    .now_playing
+                    .as_ref()
+                    .map(|np| match &np.item {
+                        Playable::Track(track) => {
+                            format!("{} - {}", track.album_name(), track.artist_name())
+                        }
+                        Playable::Episode(episode) => episode.name.to_string(),
+                    })
+                    .unwrap_or_else(|| "Now Playing".to_string())
+            }),
+    )
 }
 
 fn preferences_widget() -> impl Widget<AppState> {

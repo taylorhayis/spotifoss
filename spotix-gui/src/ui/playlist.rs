@@ -18,7 +18,6 @@ use crate::{
         config::{SortCriteria, SortOrder},
     },
     error::Error,
-    ui::menu,
     webapi::WebApi,
     widget::{Async, Empty, MyWidgetExt, RemoteImage, ThemeScope},
 };
@@ -209,17 +208,12 @@ pub fn list_widget() -> impl Widget<AppState> {
 }
 
 fn unfollow_confirm_window(msg: UnfollowPlaylist) -> WindowDesc<AppState> {
-    let win = WindowDesc::new(unfollow_playlist_confirm_widget(msg))
-        .window_size((theme::grid(45.0), theme::grid(25.0)))
-        .title("Unfollow playlist")
-        .resizable(false)
-        .show_titlebar(false)
-        .transparent(true);
-    if cfg!(target_os = "macos") {
-        win.menu(menu::main_menu)
-    } else {
-        win
-    }
+    super::finish_window_desc(
+        WindowDesc::new(unfollow_playlist_confirm_widget(msg))
+            .window_size((theme::grid(45.0), theme::grid(25.0)))
+            .title("Unfollow playlist")
+            .resizable(false),
+    )
 }
 
 fn unfollow_playlist_confirm_widget(msg: UnfollowPlaylist) -> impl Widget<AppState> {
@@ -255,17 +249,12 @@ fn unfollow_playlist_confirm_widget(msg: UnfollowPlaylist) -> impl Widget<AppSta
 }
 
 fn rename_playlist_window(link: PlaylistLink) -> WindowDesc<AppState> {
-    let win = WindowDesc::new(rename_playlist_widget(link))
-        .window_size((theme::grid(45.0), theme::grid(30.0)))
-        .title("Rename playlist")
-        .resizable(false)
-        .show_titlebar(false)
-        .transparent(true);
-    if cfg!(target_os = "macos") {
-        win.menu(menu::main_menu)
-    } else {
-        win
-    }
+    super::finish_window_desc(
+        WindowDesc::new(rename_playlist_widget(link))
+            .window_size((theme::grid(45.0), theme::grid(30.0)))
+            .title("Rename playlist")
+            .resizable(false),
+    )
 }
 
 #[derive(Clone, Lens)]

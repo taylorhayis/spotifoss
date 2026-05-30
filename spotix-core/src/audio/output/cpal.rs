@@ -58,6 +58,14 @@ impl CpalOutput {
         const PREFERRED_SAMPLE_RATE: cpal::SampleRate = cpal::SampleRate(44_100);
         const PREFERRED_CHANNELS: cpal::ChannelCount = 2;
 
+        // CoreAudio can SIGSEGV inside supported_output_configs() on some macOS
+        // setups. The playback pipeline resamples anyway, so default config is fine.
+        #[cfg(target_os = "macos")]
+        {
+            return Ok(device.default_output_config()?);
+        }
+
+        #[cfg(not(target_os = "macos"))]
         for s in device.supported_output_configs()? {
             let rates = s.min_sample_rate()..=s.max_sample_rate();
             if s.channels() == PREFERRED_CHANNELS
@@ -68,6 +76,7 @@ impl CpalOutput {
             }
         }
 
+        #[cfg(not(target_os = "macos"))]
         Ok(device.default_output_config()?)
     }
 }

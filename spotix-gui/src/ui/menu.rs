@@ -7,12 +7,19 @@ use crate::{
 
 pub fn main_menu(_window: Option<WindowId>, _data: &AppState, _env: &Env) -> Menu<AppState> {
     if cfg!(target_os = "macos") {
-        Menu::empty().entry(mac_app_menu())
+        Menu::empty()
+            .entry(mac_app_menu())
+            .entry(file_menu())
     } else {
         Menu::empty()
     }
     .entry(edit_menu())
     .entry(view_menu())
+}
+
+fn file_menu() -> Menu<AppState> {
+    Menu::new(LocalizedString::new("common-menu-file-menu").with_placeholder("File"))
+        .entry(platform_menus::mac::file::close())
 }
 
 fn mac_app_menu() -> Menu<AppState> {

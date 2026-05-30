@@ -2173,15 +2173,37 @@ impl WebApi {
 impl WebApi {
     // https://developer.spotify.com/documentation/web-api/reference/get-a-list-of-current-users-playlists
     pub fn get_playlists(&self) -> Result<Vector<Playlist>, Error> {
-        let result: rspotify::model::Page<rspotify::model::SimplifiedPlaylist> = self
-            .load_cached_value_rspotify("playlists", "all", CachePolicy::Use, || {
-                self.rspotify_call(|| self.rspotify.current_user_playlists_manual(Some(50), None))
-            })?;
-        Ok(result
-            .items
-            .into_iter()
-            .map(|playlist| self.playlist_from_simplified(playlist))
-            .collect())
+        const PAGE_SIZE: u32 = 50;
+        let mut all = Vector::new();
+        let mut offset = 0u32;
+
+        loop {
+            let page_key = format!("all-o{offset}-l{PAGE_SIZE}");
+            let page: rspotify::model::Page<rspotify::model::SimplifiedPlaylist> = self
+                .load_cached_value_rspotify("playlists", &page_key, CachePolicy::Use, || {
+                    self.rspotify_call(|| {
+                        self.rspotify
+                            .current_user_playlists_manual(Some(PAGE_SIZE), Some(offset))
+                    })
+                })?;
+
+            let next_offset = page.offset + page.limit;
+            let total = page.total;
+            let empty = page.items.is_empty();
+
+            all.extend(
+                page.items
+                    .into_iter()
+                    .map(|playlist| self.playlist_from_simplified(playlist)),
+            );
+
+            if empty || next_offset >= total {
+                break;
+            }
+            offset = next_offset;
+        }
+
+        Ok(all)
     }
 
     pub fn follow_playlist(&self, id: &str) -> Result<(), Error> {

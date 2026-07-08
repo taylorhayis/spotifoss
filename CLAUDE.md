@@ -14,8 +14,8 @@ cargo build
 cargo build --release
 
 # Run the GUI app
-cargo run --bin spotix-gui
-cargo run --bin spotix-gui --release
+cargo run --bin spotifoss
+cargo run --bin spotifoss --release
 
 # Check code style (matches CI)
 cargo clippy -- -D warnings
@@ -42,9 +42,9 @@ sudo dnf install openssl-devel gtk3-devel cairo-devel alsa-lib-devel
 
 ## Architecture
 
-Spotix is a native Spotify client (fork of psst) organized as a Rust workspace with two crates:
+Spotifoss is a native Spotify client. It is a fork of [Spotix](https://github.com/skyline69/spotix), which was itself a fork of psst. The codebase is organized as a Rust workspace with two crates:
 
-### spotix-core
+### spotifoss-core
 Core library handling Spotify connectivity and audio:
 - `session/` - Spotify authentication (OAuth, login5, tokens) and Mercury protocol messaging
 - `player/` - Playback control, queue management, audio file loading, and worker threads
@@ -52,7 +52,7 @@ Core library handling Spotify connectivity and audio:
 - `connection/` - Low-level Spotify protocol connection (Shannon encryption)
 - `cache.rs`, `cdn.rs` - Track caching and CDN file fetching
 
-### spotix-gui
+### spotifoss-gui
 Druid-based GUI application:
 - `ui/` - View modules for each screen (home, library, playlist, album, artist, lyrics, preferences, etc.)
 - `controller/` - Event handlers including `playback.rs` (main playback controller)
@@ -69,4 +69,4 @@ Druid-based GUI application:
 
 ## Theming
 
-Custom themes are TOML files in `~/.config/Spotix/themes/`. Each theme defines color keys and a `name` field. Theme selection is in Settings -> General.
+Custom themes are TOML files in `~/.config/Spotifoss/themes/`. Each theme defines color keys and a `name` field. Theme selection is in Settings -> General.

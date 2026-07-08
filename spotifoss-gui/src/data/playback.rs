@@ -1,0 +1,243 @@
+use std::{fmt, sync::Arc, time::Duration};
+
+use druid::{Data, Lens, im::Vector};
+use serde::{Deserialize, Serialize};
+use spotifoss_core::item_id::ItemId;
+
+use super::{
+    AlbumLink, ArtistLink, Episode, Image, Library, Nav, PlaylistLink, RecommendationsRequest,
+    ShowLink, Track,
+};
+
+#[derive(Clone, Data, Lens)]
+pub struct Playback {
+    pub state: PlaybackState,
+    pub now_playing: Option<NowPlaying>,
+    pub shuffle: bool,
+    pub repeat: RepeatMode,
+    pub queue: Vector<QueueEntry>,
+    pub volume: f64,
+}
+
+#[derive(Clone, Debug, Data, Lens)]
+pub struct QueueEntry {
+    pub item: Playable,
+    pub origin: PlaybackOrigin,
+}
+
+#[derive(Clone, Debug)]
+pub enum Playable {
+    Track(Arc<Track>),
+    Episode(Arc<Episode>),
+}
+
+impl Playable {
+    pub fn track(&self) -> Option<&Arc<Track>> {
+        if let Self::Track(track) = self {
+            Some(track)
+        } else {
+            None
+        }
+    }
+
+    pub fn id(&self) -> ItemId {
+        match self {
+            Playable::Track(track) => track.id.0,
+            Playable::Episode(episode) => episode.id.0,
+        }
+    }
+
+    pub fn name(&self) -> &Arc<str> {
+        match self {
+            Playable::Track(track) => &track.name,
+            Playable::Episode(episode) => &episode.name,
+        }
+    }
+
+    pub fn duration(&self) -> Duration {
+        match self {
+            Playable::Track(track) => track.duration,
+            Playable::Episode(episode) => episode.duration,
+        }
+    }
+
+    pub fn same(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+
+impl Data for Playable {
+    fn same(&self, other: &Self) -> bool {
+        self.same(other)
+    }
+}
+
+#[derive(Default, Copy, Clone, Debug, Data, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RepeatMode {
+    #[default]
+    Off,
+    All,
+    One,
+}
+
+impl RepeatMode {
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Off => Self::All,
+            Self::All => Self::One,
+            Self::One => Self::Off,
+        }
+    }
+}
+
+/// Legacy queue mode stored in older configs.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub(crate) enum LegacyQueueBehavior {
+    Sequential,
+    Random,
+    LoopTrack,
+    LoopAll,
+}
+
+pub(crate) fn queue_settings_from_legacy(legacy: LegacyQueueBehavior) -> (bool, RepeatMode) {
+    match legacy {
+        LegacyQueueBehavior::Sequential => (false, RepeatMode::Off),
+        LegacyQueueBehavior::Random => (true, RepeatMode::Off),
+        LegacyQueueBehavior::LoopTrack => (false, RepeatMode::One),
+        LegacyQueueBehavior::LoopAll => (false, RepeatMode::All),
+    }
+}
+
+#[derive(Copy, Clone, Debug, Data, Eq, PartialEq, Serialize, Deserialize)]
+pub enum PlaybackState {
+    Loading,
+    Playing,
+    Paused,
+    Stopped,
+}
+
+#[derive(Copy, Clone, Debug, Data, Eq, PartialEq)]
+pub enum PlaybackPanelTab {
+    Queue,
+    RecentlyPlayed,
+}
+
+#[derive(Clone, Data, Lens)]
+pub struct NowPlaying {
+    pub item: Playable,
+    pub origin: PlaybackOrigin,
+    pub progress: Duration,
+    pub is_playing: bool,
+
+    // Although keeping a ref to the `Library` here is a bit of a hack, it dramatically
+    // simplifies displaying the track context menu in the playback bar.
+    pub library: Arc<Library>,
+}
+
+impl NowPlaying {
+    pub fn cover_image_url(&self, width: f64, height: f64) -> Option<&str> {
+        fn pick_image(images: &Vector<Image>, width: f64, height: f64) -> Option<&str> {
+            Image::at_least_of_size(images, width, height)
+                .or_else(|| images.front())
+                .map(|img| img.url.as_ref())
+        }
+
+        match &self.item {
+            Playable::Track(track) => {
+                if let Some(album) = track.album.as_ref()
+                    && let Some(url) = pick_image(&album.images, width, height)
+                {
+                    return Some(url);
+                }
+                if let PlaybackOrigin::Album(album) = &self.origin
+                    && let Some(url) = pick_image(&album.images, width, height)
+                {
+                    return Some(url);
+                }
+                None
+            }
+            Playable::Episode(episode) => Some(&episode.image(width, height)?.url),
+        }
+    }
+
+    pub fn cover_image_metadata(&self) -> Option<(&str, (u32, u32))> {
+        match &self.item {
+            Playable::Track(track) => track
+                .album
+                .as_ref()
+                .or(match &self.origin {
+                    PlaybackOrigin::Album(album) => Some(album),
+                    _ => None,
+                })
+                .and_then(|album| {
+                    album.images.get(0).map(|img| {
+                        (
+                            &*img.url,
+                            (
+                                img.width.unwrap_or(0) as u32,
+                                img.height.unwrap_or(0) as u32,
+                            ),
+                        )
+                    })
+                }),
+            Playable::Episode(episode) => episode.images.get(0).map(|img| {
+                (
+                    &*img.url,
+                    (
+                        img.width.unwrap_or(0) as u32,
+                        img.height.unwrap_or(0) as u32,
+                    ),
+                )
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Data, Serialize, Deserialize)]
+pub enum PlaybackOrigin {
+    Home,
+    Library,
+    Album(AlbumLink),
+    Artist(ArtistLink),
+    Playlist(PlaylistLink),
+    Show(ShowLink),
+    Search(Arc<str>),
+    Recommendations(Arc<RecommendationsRequest>),
+}
+
+impl PlaybackOrigin {
+    pub fn to_nav(&self) -> Nav {
+        match &self {
+            PlaybackOrigin::Home => Nav::Home,
+            PlaybackOrigin::Library => Nav::SavedTracks,
+            PlaybackOrigin::Album(link) => Nav::AlbumDetail(link.clone(), None),
+            PlaybackOrigin::Artist(link) => Nav::ArtistDetail(link.clone()),
+            PlaybackOrigin::Playlist(link) => Nav::PlaylistDetail(link.clone()),
+            PlaybackOrigin::Show(link) => Nav::ShowDetail(link.clone()),
+            PlaybackOrigin::Search(query) => Nav::SearchResults(query.clone()),
+            PlaybackOrigin::Recommendations(request) => Nav::Recommendations(request.clone()),
+        }
+    }
+}
+
+impl fmt::Display for PlaybackOrigin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self {
+            PlaybackOrigin::Home => f.write_str("Home"),
+            PlaybackOrigin::Library => f.write_str("Saved Tracks"),
+            PlaybackOrigin::Album(link) => link.name.fmt(f),
+            PlaybackOrigin::Artist(link) => link.name.fmt(f),
+            PlaybackOrigin::Playlist(link) => link.name.fmt(f),
+            PlaybackOrigin::Show(link) => link.name.fmt(f),
+            PlaybackOrigin::Search(query) => query.fmt(f),
+            PlaybackOrigin::Recommendations(_) => f.write_str("Recommended"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Data)]
+pub struct PlaybackPayload {
+    pub origin: PlaybackOrigin,
+    pub items: Vector<Playable>,
+    pub position: usize,
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rebuild Spotix release bundle and install to /Applications/Spotix-Dev.app
+# Rebuild Spotifoss release bundle and install to /Applications/Spotifoss-Dev.app
 # so a Dock shortcut always launches the latest local build.
 set -euo pipefail
 
@@ -15,12 +15,12 @@ if ! command -v cargo-bundle >/dev/null 2>&1; then
     exit 1
 fi
 
-cd "$ROOT/spotix-gui"
+cd "$ROOT/spotifoss-gui"
 echo "Building release bundle..."
 cargo bundle --release
 
-APP_SRC="$ROOT/target/release/bundle/osx/Spotix.app"
-APP_DST="/Applications/Spotix-Dev.app"
+APP_SRC="$ROOT/target/release/bundle/osx/Spotifoss.app"
+APP_DST="/Applications/Spotifoss-Dev.app"
 
 rm -rf "$APP_DST"
 cp -R "$APP_SRC" "$APP_DST"

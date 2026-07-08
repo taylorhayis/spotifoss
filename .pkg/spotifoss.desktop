@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Spotifoss
+Comment=Fast and native Spotify client
+GenericName=Music Player
+Icon=spotifoss
+TryExec=spotifoss
+Exec=spotifoss %U
+Terminal=false
+MimeType=x-scheme-handler/spotifoss;
+Categories=Audio;Music;Player;AudioVideo;
+StartupWMClass=spotifoss

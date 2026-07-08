@@ -3,29 +3,29 @@
 set -eo pipefail
 
 REPO_OWNER="skyline69"
-REPO_NAME="spotix"
+REPO_NAME="spotifoss"
 
 cat <<EOF
-cask "spotix" do
+cask "spotifoss" do
   version :latest
   sha256 :no_check
 
-  url "https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest/download/Spotix.dmg"
-  name "Spotix"
+  url "https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest/download/Spotifoss.dmg"
+  name "Spotifoss"
   desc "Fast and native Spotify client"
   homepage "https://github.com/${REPO_OWNER}/${REPO_NAME}/"
 
   depends_on macos: ">= :big_sur"
 
-  app "Spotix.app"
+  app "Spotifoss.app"
 
   zap trash: [
-    "~/Library/Application Support/Spotix",
-    "~/Library/Caches/com.skyline69.spotix",
-    "~/Library/Caches/Spotix",
-    "~/Library/HTTPStorages/com.skyline69.spotix",
-    "~/Library/Preferences/com.skyline69.spotix.plist",
-    "~/Library/Saved Application State/com.skyline69.spotix.savedState",
+    "~/Library/Application Support/Spotifoss",
+    "~/Library/Caches/com.spotifoss.app",
+    "~/Library/Caches/Spotifoss",
+    "~/Library/HTTPStorages/com.spotifoss.app",
+    "~/Library/Preferences/com.spotifoss.app.plist",
+    "~/Library/Saved Application State/com.spotifoss.app.savedState",
   ]
 end
 EOF

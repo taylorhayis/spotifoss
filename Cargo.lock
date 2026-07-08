@@ -5866,7 +5866,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spotix-core"
+name = "spotifoss-core"
 version = "0.1.0"
 dependencies = [
  "aes",
@@ -5910,7 +5910,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "spotix-gui"
+name = "spotifoss-gui"
 version = "0.1.0"
 dependencies = [
  "async-trait",
@@ -5942,7 +5942,7 @@ dependencies = [
  "serde",
  "serde_json",
  "souvlaki",
- "spotix-core",
+ "spotifoss-core",
  "threadpool",
  "time 0.3.47",
  "time-humanize",

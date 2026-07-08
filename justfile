@@ -8,10 +8,10 @@ build-release:
     cargo build --release
 
 run *ARGS:
-    cargo run --bin spotix -- {{ARGS}}
+    cargo run --bin spotifoss -- {{ARGS}}
 
 run-release *ARGS:
-    cargo run --bin spotix --release -- {{ARGS}}
+    cargo run --bin spotifoss --release -- {{ARGS}}
 
 test *ARGS:
     cargo test {{ARGS}}
@@ -31,11 +31,11 @@ fmt-check:
 clean:
     cargo clean
 
-# Build macOS .app bundle (run from spotix-gui; output in target/release/bundle/osx/)
+# Build macOS .app bundle (run from spotifoss-gui; output in target/release/bundle/osx/)
 bundle:
-    cd spotix-gui && cargo bundle --release
+    cd spotifoss-gui && cargo bundle --release
 
-# Rebuild release bundle and install to /Applications/Spotix-Dev.app for Dock use (macOS only)
+# Rebuild release bundle and install to /Applications/Spotifoss-Dev.app for Dock use (macOS only)
 [macos]
 bundle-dev:
     bash scripts/rebundle-macos-dev.sh

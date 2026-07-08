@@ -1,4 +1,4 @@
-Package: spotix-gui
+Package: spotifoss-gui
 Version: $VERSION
 Architecture: $ARCHITECTURE
 Maintainer: skyline69

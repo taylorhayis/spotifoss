@@ -1,11 +1,9 @@
 <div align="center">
-  <img src="assets/logo.svg" alt="Spotix logo" width="96" height="96" />
-  <h1>Spotix</h1>
+  <img src="assets/logo.svg" alt="Spotifoss logo" width="96" height="96" />
+  <h1>Spotifoss</h1>
   <p>Fast, native Spotify client written in Rust — low overhead, clean UI, lightweight runtime (no Electron).</p>
   <p>
-    <a href="https://github.com/skyline69/spotix/releases/latest">Latest Release</a>
-    •
-    <a href="https://github.com/skyline69/spotix/issues">Issues</a>
+    <a href="https://github.com/skyline69/spotix">Upstream: Spotix</a>
   </p>
 </div>
 
@@ -15,10 +13,10 @@
 
 
 ## Fork notice
-- This project is a fork of https://github.com/jpochyla/psst
-- The fork is maintained by skyline69 and diverges in naming, packaging, and ongoing changes
 
-## Additional features over upstream psst
+Spotifoss is a fork of [Spotix](https://github.com/skyline69/spotix). Spotix itself was a fork of [psst](https://github.com/jpochyla/psst).
+
+## Additional features over psst and Spotix
 - Theme support with TOML themes (including custom colors and lyric highlighting)
 - Spotify-style default dark theme with bundled Spotify Mix fonts
 - Configurable cache size limit and cache usage display in preferences
@@ -37,16 +35,16 @@
 ## Download
 
 GitHub Actions build and publish releases when changes land on `main`.
-Grab the latest installers from the [Releases page](https://github.com/skyline69/spotix/releases/latest).
+Grab the latest installers from your project's Releases page when published.
 
-| Platform               | Download Link                                                                               |
-| ---------------------- | ------------------------------------------------------------------------------------------- |
-| Linux (x86_64)         | [Download](https://github.com/skyline69/spotix/releases/latest/download/spotix-linux-x86_64)  |
-| Linux (aarch64)        | [Download](https://github.com/skyline69/spotix/releases/latest/download/spotix-linux-aarch64)|
-| Debian Package (amd64) | [Download](https://github.com/skyline69/spotix/releases/latest/download/spotix-amd64.deb)    |
-| Debian Package (arm64) | [Download](https://github.com/skyline69/spotix/releases/latest/download/spotix-arm64.deb)    |
-| macOS                  | [Download](https://github.com/skyline69/spotix/releases/latest/download/Spotix.dmg)          |
-| Windows                | [Download](https://github.com/skyline69/spotix/releases/latest/download/Spotix.exe)          |
+| Platform               | Artifact name              |
+| ---------------------- | -------------------------- |
+| Linux (x86_64)         | `spotifoss-linux-x86_64`   |
+| Linux (aarch64)        | `spotifoss-linux-aarch64`  |
+| Debian Package (amd64) | `spotifoss-amd64.deb`      |
+| Debian Package (arm64) | `spotifoss-arm64.deb`      |
+| macOS                  | `Spotifoss.dmg`            |
+| Windows                | `Spotifoss.exe`            |
 
 ## Build
 - Rust stable (1.65.0 or newer)
@@ -67,22 +65,22 @@ ulimit -d $(( 2 * `ulimit -d` ))
 
 ### Install from source
 ```shell
-cargo install --locked --path spotix-gui
-# This installs the `spotix` binary to ~/.cargo/bin/.
+cargo install --locked --path spotifoss-gui
+# This installs the `spotifoss` binary to ~/.cargo/bin/.
 # On Linux, the app auto-installs its .desktop file and icons on first run,
 # so it will appear in your application launcher.
 # --locked ensures the pinned dependency versions are used.
 ```
 
 ### Optional Spotify Developer Client ID
-Spotix includes a default Spotify client ID, but heavy shared usage can trigger
+Spotifoss includes a default Spotify client ID, but heavy shared usage can trigger
 Spotify rate limits. If you see repeated 429 errors, create your own Spotify app:
 
 1. Open the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
 2. Create an app and enable Web API access.
 3. Add `http://127.0.0.1:8888/login` as a redirect URI.
 4. Copy the generated Client ID.
-5. In Spotix, open Settings -> Account and paste it into Spotify Developer Client ID.
+5. In Spotifoss, open Settings -> Account and paste it into Spotify Developer Client ID.
 6. Re-authenticate with Spotify.
 
 ### Build from source
@@ -93,7 +91,7 @@ cargo build
 
 ### Run from source
 ```shell
-cargo run --bin spotix
+cargo run --bin spotifoss
 # Add --release for release builds.
 ```
 
@@ -140,8 +138,8 @@ cargo bundle --release
 <img width="338" height="415" alt="image" src="https://github.com/user-attachments/assets/6e02bb5c-825a-4c0c-ae49-50c3335b9d53" />
 
 ## Theming
-- Place TOML theme files in `~/.config/Spotix/themes/`.
-- Spotix ships with multiple preset themes that auto-install into that folder on first run.
+- Place TOML theme files in `~/.config/Spotifoss/themes/`.
+- Spotifoss ships with multiple preset themes that auto-install into that folder on first run.
 - Each theme file must include a `name` field (e.g. `name = "catppuccin"`) and color keys. Example:
 ```toml
 name = "catppuccin"
@@ -178,15 +176,18 @@ status_text_color = "#bac2de"
 - Select themes in Settings → General. Custom themes are listed by their `name`.
 
 ## Project layout
-- `/spotix-core` core library (session, decoding, playback)
-- `/spotix-gui` GUI app (Druid) — binary name: `spotix`
+- `/spotifoss-core` core library (session, decoding, playback)
+- `/spotifoss-gui` GUI app (Druid) — binary name: `spotifoss`
 
 ## Privacy
-Spotix connects only to official Spotify servers.
+Spotifoss connects only to official Spotify servers.
 Credentials are not stored; a reusable token is used instead.
 Cached data is stored locally and can be deleted at any time.
 
+On first launch after renaming from Spotix, your existing settings are copied automatically from the old Spotix config folder.
+
 ## Credits
+- [Spotix](https://github.com/skyline69/spotix) — upstream fork this project is based on
 - librespot: https://github.com/librespot-org/librespot
 - druid: https://github.com/linebender/druid
 - ncspot: https://github.com/hrkfdn/ncspot

@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: Spotix
-Source: https://github.com/skyline69/spotix
+Upstream-Name: Spotifoss
+Source: Spotifoss (fork of Spotix — https://github.com/skyline69/spotix)
 
 Files: *
 Copyright: (c) 2024 skyline69

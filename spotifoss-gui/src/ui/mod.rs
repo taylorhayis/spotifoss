@@ -1,0 +1,754 @@
+use crate::data::Track;
+use crate::data::config::SortCriteria;
+use crate::error::Error;
+use crate::{
+    cmd,
+    controller::{
+        AfterDelay, AlertCleanupController, NavController, SessionController, SortController,
+    },
+    data::{
+        ALERT_DURATION, Alert, AlertActionKind, AlertStyle, AppState, CommonCtxSearch, Config, Nav,
+        Playable, Playback, Route, config::SortOrder,
+    },
+    webapi::WebApi,
+    widget::{
+        Border, Empty, MyWidgetExt, Overlay, RemoteImage, ThemeScope, ViewDispatcher, icons,
+        icons::SvgIcon,
+    },
+};
+use credits::TrackCredits;
+use druid::KbKey;
+use druid::widget::Controller;
+use druid::{
+    Color, Data, Env, Insets, Key, LensExt, Menu, MenuItem, RenderContext, Selector, Widget,
+    WidgetExt, WindowDesc,
+    im::Vector,
+    kurbo::Line,
+    widget::{
+        CrossAxisAlignment, Either, Flex, Label, LineBreaking, List, Painter, Scroll, Slider,
+        Split, TextBox, ViewSwitcher,
+    },
+};
+use druid_shell::Cursor;
+use std::sync::Arc;
+use std::time::Duration;
+
+pub mod album;
+pub mod artist;
+pub mod credits;
+pub mod desktop;
+pub mod episode;
+pub mod find;
+pub mod home;
+pub mod library;
+pub mod lyrics;
+pub mod menu;
+pub mod palette;
+pub mod playable;
+pub mod playback;
+pub mod playlist;
+pub mod preferences;
+pub mod recommend;
+pub mod search;
+pub mod show;
+pub mod theme;
+pub mod track;
+pub mod user;
+pub mod utils;
+
+pub const DOWNLOAD_ARTWORK: Selector<(String, String)> = Selector::new("app.artwork.download");
+
+struct CloseTrayController;
+
+impl<W: Widget<AppState>> Controller<AppState, W> for CloseTrayController {
+    fn event(
+        &mut self,
+        child: &mut W,
+        ctx: &mut druid::EventCtx,
+        event: &druid::Event,
+        data: &mut AppState,
+        env: &Env,
+    ) {
+        if matches!(event, druid::Event::WindowCloseRequested)
+            && data.config.close_to_tray
+            && data.tray_active
+        {
+            data.config.volume = data.playback.volume;
+            data.config.save();
+            ctx.submit_command(druid::commands::HIDE_WINDOW.to(ctx.window_id()));
+            ctx.set_handled();
+            return;
+        }
+        child.event(ctx, event, data, env);
+    }
+}
+
+/// Linux/Windows use borderless transparent windows; macOS needs a native title bar
+/// so users get the traffic-light close/minimize/maximize controls.
+pub(crate) fn finish_window_desc(win: WindowDesc<AppState>) -> WindowDesc<AppState> {
+    if cfg!(target_os = "macos") {
+        win.show_titlebar(true)
+            .transparent(false)
+            .menu(menu::main_menu)
+    } else {
+        win.show_titlebar(false).transparent(true)
+    }
+}
+
+pub fn main_window(config: &Config) -> WindowDesc<AppState> {
+    finish_window_desc(
+        WindowDesc::new(root_widget().controller(CloseTrayController))
+            .title(compute_main_window_title)
+            .with_min_size((theme::grid(65.0), theme::grid(50.0)))
+            .window_size(config.window_size),
+    )
+}
+
+pub fn preferences_window() -> WindowDesc<AppState> {
+    let win_size = (theme::grid(50.0), theme::grid(55.0));
+
+    // On Windows, the window size includes the titlebar.
+    let win_size = if cfg!(target_os = "windows") {
+        const WINDOWS_TITLEBAR_OFFSET: f64 = 56.0;
+        (win_size.0, win_size.1 + WINDOWS_TITLEBAR_OFFSET)
+    } else {
+        win_size
+    };
+
+    finish_window_desc(
+        WindowDesc::new(preferences_widget())
+            .title("Preferences")
+            .window_size(win_size)
+            .resizable(false),
+    )
+}
+
+pub fn account_setup_window() -> WindowDesc<AppState> {
+    finish_window_desc(
+        WindowDesc::new(Overlay::bottom(account_setup_widget(), alert_widget()))
+            .title("Login")
+            .window_size((theme::grid(50.0), theme::grid(55.0)))
+            .resizable(false),
+    )
+}
+
+pub fn artwork_window() -> WindowDesc<AppState> {
+    let win_size = (theme::grid(50.0), theme::grid(50.0));
+
+    // On Windows, the window size includes the titlebar, so we need to account for it
+    let win_size = if cfg!(target_os = "windows") {
+        const WINDOWS_TITLEBAR_OFFSET: f64 = 24.0; // Standard Windows titlebar height
+        (win_size.0, win_size.1 + WINDOWS_TITLEBAR_OFFSET)
+    } else {
+        win_size
+    };
+
+    finish_window_desc(
+        WindowDesc::new(artwork_widget())
+            .window_size(win_size)
+            .resizable(false)
+            .title(|data: &AppState, _env: &_| {
+                data.playback
+                    .now_playing
+                    .as_ref()
+                    .map(|np| match &np.item {
+                        Playable::Track(track) => {
+                            format!("{} - {}", track.album_name(), track.artist_name())
+                        }
+                        Playable::Episode(episode) => episode.name.to_string(),
+                    })
+                    .unwrap_or_else(|| "Now Playing".to_string())
+            }),
+    )
+}
+
+fn preferences_widget() -> impl Widget<AppState> {
+    ThemeScope::new(
+        preferences::preferences_widget()
+            .background(theme::BACKGROUND_DARK)
+            .expand(),
+    )
+}
+
+fn account_setup_widget() -> impl Widget<AppState> {
+    ThemeScope::new(
+        preferences::account_setup_widget()
+            .background(theme::BACKGROUND_DARK)
+            .expand(),
+    )
+}
+
+struct ArtworkController;
+
+impl<W: Widget<AppState>> Controller<AppState, W> for ArtworkController {
+    fn event(
+        &mut self,
+        child: &mut W,
+        ctx: &mut druid::EventCtx,
+        event: &druid::Event,
+        data: &mut AppState,
+        env: &druid::Env,
+    ) {
+        if let druid::Event::WindowConnected = event {
+            ctx.request_focus();
+            ctx.set_handled();
+        }
+
+        if let druid::Event::KeyDown(key_event) = event
+            && key_event.key == KbKey::Character('d'.into())
+            && let Some(np) = &data.playback.now_playing
+        {
+            // Handle D key for download
+            if let Some((url, _)) = np.cover_image_metadata() {
+                let title = match &np.item {
+                    Playable::Track(track) => track
+                        .album
+                        .as_ref()
+                        .map(|a| a.name.as_ref())
+                        .unwrap_or("Unknown Album"),
+                    Playable::Episode(episode) => episode.show.name.as_ref(),
+                };
+                ctx.submit_command(DOWNLOAD_ARTWORK.with((url.to_string(), title.to_string())));
+                ctx.set_handled();
+            }
+        }
+        child.event(ctx, event, data, env);
+    }
+}
+
+pub fn artwork_widget() -> impl Widget<AppState> {
+    RemoteImage::new(utils::placeholder_widget(), move |data: &AppState, _| {
+        data.playback
+            .now_playing
+            .as_ref()
+            .and_then(|np| np.cover_image_url(512.0, 512.0))
+            .map(|url| url.into())
+    })
+    .expand()
+    .background(theme::BACKGROUND_DARK)
+    .controller(ArtworkController)
+}
+
+fn root_widget() -> impl Widget<AppState> {
+    let sidebar_content = sidebar_menu_widget().padding(if cfg!(target_os = "macos") {
+        // Accommodate the window controls on Mac.
+        Insets::new(0.0, 24.0, 0.0, 0.0)
+    } else {
+        Insets::ZERO
+    });
+
+    let controls = Flex::column()
+        .with_default_spacer()
+        .with_child(volume_slider())
+        .with_default_spacer()
+        .with_child(user::user_widget())
+        .center()
+        .fix_height(88.0)
+        .background(Border::Top.with_color(theme::GREY_500));
+
+    let sidebar = Flex::column()
+        .with_flex_child(sidebar_content, 1.0)
+        .with_child(controls)
+        .background(theme::BACKGROUND_DARK);
+
+    let topbar = Flex::row()
+        .must_fill_main_axis(true)
+        .with_child(topbar_back_button_widget())
+        .with_flex_child(topbar_title_widget(), 1.0)
+        .with_child(topbar_sort_widget())
+        .with_child(topbar_search_widget())
+        .background(Border::Bottom.with_color(theme::BACKGROUND_DARK));
+
+    let main_content = Flex::column()
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .with_child(topbar)
+        .with_flex_child(Overlay::bottom(route_widget(), alert_widget()), 1.0)
+        .with_child(playback::panel_widget())
+        .background(theme::BACKGROUND_LIGHT);
+
+    let main = Flex::row()
+        .with_flex_child(main_content, 1.0)
+        .with_child(ViewSwitcher::new(
+            |data: &AppState, _| data.playback_panel_open,
+            |open, _, _| {
+                if *open {
+                    Flex::row()
+                        .with_child(queue_panel_separator())
+                        .with_child(playback::queue_panel_widget())
+                        .boxed()
+                } else {
+                    Empty.boxed()
+                }
+            },
+        ));
+
+    let split = Split::columns(sidebar, main)
+        .split_point(0.2)
+        .bar_size(1.0)
+        .min_size(150.0, 300.0)
+        .min_bar_area(1.0)
+        .solid_bar(true);
+
+    ThemeScope::new(split)
+        .controller(SessionController::default())
+        .controller(NavController::default())
+        .controller(SortController)
+        .on_command_async(
+            cmd::LOAD_TRACK_CREDITS,
+            |track: Arc<Track>| {
+                log::debug!("fetching credits for track: {}", track.name);
+                WebApi::global().get_track_credits(&track.id.0.to_base62())
+            },
+            |_, data: &mut AppState, _| {
+                data.credits = None;
+            },
+            |_ctx, data, (_track, result): (Arc<Track>, Result<TrackCredits, Error>)| match result {
+                Ok(credits) => {
+                    data.credits = Some(credits);
+                }
+                Err(err) => {
+                    log::error!("Failed to fetch credits for {}: {:?}", _track.name, err);
+                    data.error_alert(format!("Failed to fetch track credits: {err}"));
+                }
+            },
+        )
+    // .debug_invalidation()
+    // .debug_widget_id()
+    // .debug_paint_layout()
+}
+
+pub const ALERT_ACTION: Selector<AlertActionKind> = Selector::new("app.alert.action");
+
+fn alert_widget() -> impl Widget<AppState> {
+    const BG: Key<Color> = Key::new("app.alert.BG");
+    const DISMISS_ALERT: Selector<usize> = Selector::new("app.alert.dismiss");
+
+    List::new(|| {
+        let action_button = Either::new(
+            |alert: &Alert, _| alert.action.is_some(),
+            Label::dynamic(|alert: &Alert, _| {
+                alert
+                    .action
+                    .as_ref()
+                    .map(|a| a.label.to_string())
+                    .unwrap_or_default()
+            })
+            .with_font(theme::UI_FONT_MEDIUM)
+            .padding((theme::grid(1.0), theme::grid(0.5)))
+            .background(druid::Color::rgba8(255, 255, 255, 30))
+            .rounded(theme::BUTTON_BORDER_RADIUS)
+            .on_left_click(|ctx, _, alert: &mut Alert, _| {
+                if let Some(action) = &alert.action {
+                    ctx.submit_command(ALERT_ACTION.with(action.kind.clone()));
+                    ctx.submit_command(DISMISS_ALERT.with(alert.id));
+                }
+            }),
+            Empty,
+        );
+
+        let message_row = Flex::row()
+            .with_child(
+                Label::dynamic(|alert: &Alert, _| match alert.style {
+                    AlertStyle::Error => "Error:".to_string(),
+                    AlertStyle::Info => String::new(),
+                })
+                .with_font(theme::UI_FONT_MEDIUM),
+            )
+            .with_default_spacer()
+            .with_flex_child(Label::raw().lens(Alert::message), 1.0)
+            .with_default_spacer()
+            .with_child(action_button);
+
+        message_row
+            .padding(theme::grid(2.0))
+            .background(BG)
+            .env_scope(|env, alert: &Alert| {
+                env.set(
+                    BG,
+                    match alert.style {
+                        AlertStyle::Error => env.get(theme::RED),
+                        AlertStyle::Info => env.get(theme::GREY_600),
+                    },
+                )
+            })
+            .controller(AfterDelay::new(
+                ALERT_DURATION,
+                |ctx, alert: &mut Alert, _| {
+                    // Don't auto-dismiss persistent alerts
+                    if !alert.persistent {
+                        ctx.submit_command(DISMISS_ALERT.with(alert.id));
+                    }
+                },
+            ))
+    })
+    .lens(AppState::alerts)
+    .on_command(DISMISS_ALERT, |_, &id, state| {
+        state.dismiss_alert(id);
+    })
+    .controller(AlertCleanupController)
+}
+
+fn route_widget() -> impl Widget<AppState> {
+    ViewDispatcher::new(
+        |state: &AppState, _| state.nav.route(),
+        |route: &Route, _, _| match route {
+            Route::Home => Scroll::new(home::home_widget().padding(theme::grid(1.0)))
+                .vertical()
+                .boxed(),
+            Route::Lyrics => lyrics::lyrics_widget().padding(theme::grid(1.0)).boxed(),
+            Route::SavedTracks => Flex::column()
+                .with_child(
+                    find::finder_widget(cmd::FIND_IN_SAVED_TRACKS, "Find in Saved Tracks...")
+                        .lens(AppState::finder),
+                )
+                .with_flex_child(
+                    Scroll::new(library::saved_tracks_widget().padding(theme::grid(1.0)))
+                        .vertical(),
+                    1.0,
+                )
+                .boxed(),
+            Route::SavedAlbums => {
+                Scroll::new(library::saved_albums_widget().padding(theme::grid(1.0)))
+                    .vertical()
+                    .boxed()
+            }
+            Route::Playlists => Scroll::new(playlist::saved_playlists_widget().padding(theme::grid(1.0)))
+                .vertical()
+                .boxed(),
+            Route::Shows => Scroll::new(library::saved_shows_widget().padding(theme::grid(1.0)))
+                .vertical()
+                .boxed(),
+            Route::SearchResults => search::results_widget().padding(theme::grid(1.0)).boxed(),
+            Route::AlbumDetail => Scroll::new(album::detail_widget().padding(theme::grid(1.0)))
+                .vertical()
+                .boxed(),
+            Route::ArtistDetail => Scroll::new(artist::detail_widget().padding(theme::grid(1.0)))
+                .vertical()
+                .boxed(),
+            Route::PlaylistDetail => Flex::column()
+                .with_child(
+                    find::finder_widget(cmd::FIND_IN_PLAYLIST, "Find in Playlist...")
+                        .lens(AppState::finder),
+                )
+                .with_flex_child(
+                    Scroll::new(playlist::detail_widget().padding(theme::grid(1.0))).vertical(),
+                    1.0,
+                )
+                .boxed(),
+            Route::ShowDetail => Scroll::new(show::detail_widget().padding(theme::grid(1.0)))
+                .vertical()
+                .boxed(),
+            Route::Recommendations => {
+                Scroll::new(recommend::results_widget().padding(theme::grid(1.0)))
+                    .vertical()
+                    .boxed()
+            }
+        },
+    )
+    .expand()
+}
+
+fn sidebar_menu_widget() -> impl Widget<AppState> {
+    Flex::column()
+        .must_fill_main_axis(true)
+        .with_child(sidebar_link_widget("Home", Some(&icons::HOME), Nav::Home))
+        .with_child(sidebar_link_widget(
+            "Tracks",
+            Some(&icons::MUSIC_NOTE),
+            Nav::SavedTracks,
+        ))
+        .with_child(sidebar_link_widget(
+            "Albums",
+            Some(&icons::ALBUM),
+            Nav::SavedAlbums,
+        ))
+        .with_child(sidebar_link_widget(
+            "Playlists",
+            Some(&icons::PLAYLIST),
+            Nav::Playlists,
+        ))
+        .with_flex_child(
+            Scroll::new(playlist::sidebar_list_widget())
+                .vertical()
+                .expand_height(),
+            1.0,
+        )
+        .with_child(sidebar_link_widget(
+            "Podcasts",
+            Some(&icons::PODCAST),
+            Nav::Shows,
+        ))
+        .with_child(search::input_widget().padding((theme::grid(1.0), theme::grid(1.0))))
+}
+
+fn sidebar_link_widget(
+    title: &str,
+    icon: Option<&icons::SvgIcon>,
+    link_nav: Nav,
+) -> impl Widget<AppState> {
+    Flex::row()
+        .with_child(
+            icon.map(|i| {
+                i.scale((18.0, 18.0))
+                    .padding_right(theme::grid(1.0))
+                    .boxed()
+            })
+            .unwrap_or_else(|| Empty.boxed()),
+        )
+        .with_child(Label::new(title))
+        .with_flex_spacer(1.0)
+        .padding((theme::grid(2.0), theme::grid(1.0)))
+        .expand_width()
+        .link()
+        .env_scope({
+            let link_nav = link_nav.clone();
+            move |env, nav: &Nav| {
+                env.set(
+                    theme::LINK_COLD_COLOR,
+                    if &link_nav == nav {
+                        env.get(theme::MENU_BUTTON_BG_ACTIVE)
+                    } else {
+                        env.get(theme::MENU_BUTTON_BG_INACTIVE)
+                    },
+                );
+                env.set(
+                    theme::TEXT_COLOR,
+                    if &link_nav == nav {
+                        env.get(theme::MENU_BUTTON_FG_ACTIVE)
+                    } else {
+                        env.get(theme::MENU_BUTTON_FG_INACTIVE)
+                    },
+                );
+            }
+        })
+        .on_left_click(move |ctx, _, _, _| {
+            ctx.submit_command(cmd::NAVIGATE.with(link_nav.clone()));
+        })
+        .lens(AppState::nav)
+}
+
+fn volume_slider() -> impl Widget<AppState> {
+    const SAVE_DELAY: Duration = Duration::from_millis(100);
+
+    Flex::row()
+        .with_flex_child(
+            Slider::new()
+                .with_range(0.0, 1.0)
+                .expand_width()
+                .env_scope(|env, _| {
+                    env.set(theme::BASIC_WIDGET_HEIGHT, theme::grid(1.5));
+                    env.set(theme::FOREGROUND_LIGHT, env.get(theme::MEDIA_CONTROL_ICON));
+                    env.set(theme::FOREGROUND_DARK, env.get(theme::MEDIA_CONTROL_ICON));
+                })
+                .with_cursor(Cursor::Pointer),
+            1.0,
+        )
+        .with_default_spacer()
+        .with_child(
+            Label::dynamic(|&volume: &f64, _| format!("{}%", (volume * 100.0).floor()))
+                .with_text_color(theme::STATUS_TEXT_COLOR)
+                .with_text_size(theme::TEXT_SIZE_SMALL)
+                .fix_width(theme::grid(4.0)),
+        )
+        .padding((theme::grid(2.0), 0.0))
+        .on_debounce(SAVE_DELAY, |ctx, _, _| ctx.submit_command(cmd::SAVE_VOLUME))
+        .lens(AppState::playback.then(Playback::volume))
+        .on_scroll(
+            |data| &data.config.slider_scroll_scale,
+            |_, data, _, scaled_delta| {
+                data.playback.volume = (data.playback.volume + scaled_delta).clamp(0.0, 1.0);
+            },
+        )
+}
+
+fn topbar_sort_widget() -> impl Widget<AppState> {
+    ViewSwitcher::new(
+        |nav: &AppState, _| matches!(nav.nav, Nav::PlaylistDetail(_)),
+        move |enabled, _nav: &AppState, _| {
+            if *enabled {
+                let asc = icons::UP
+                    .scale((10.0, theme::grid(2.0)))
+                    .padding(theme::grid(1.0))
+                    .link()
+                    .rounded(theme::BUTTON_BORDER_RADIUS)
+                    .on_left_click(|ctx, _, _, _| {
+                        ctx.submit_command(cmd::TOGGLE_SORT_ORDER);
+                    })
+                    .context_menu(sorting_menu);
+
+                let desc = icons::DOWN
+                    .scale((10.0, theme::grid(2.0)))
+                    .padding(theme::grid(1.0))
+                    .link()
+                    .rounded(theme::BUTTON_BORDER_RADIUS)
+                    .on_left_click(|ctx, _, _, _| {
+                        ctx.submit_command(cmd::TOGGLE_SORT_ORDER);
+                    })
+                    .context_menu(sorting_menu);
+                Either::new(
+                    |data: &AppState, _| data.config.sort_order == SortOrder::Ascending,
+                    asc,
+                    desc,
+                )
+                .boxed()
+            } else {
+                Empty.boxed()
+            }
+        },
+    )
+    .padding(theme::grid(1.0))
+}
+
+fn search_supported(nav: &Nav) -> bool {
+    matches!(
+        nav,
+        Nav::PlaylistDetail(_)
+            | Nav::SavedTracks
+            | Nav::SavedAlbums
+            | Nav::Playlists
+            | Nav::Shows
+            | Nav::AlbumDetail(_, _)
+    )
+}
+
+fn topbar_search_widget() -> impl Widget<AppState> {
+    ViewSwitcher::new(
+        |data: &AppState, _| search_supported(&data.nav),
+        |enabled, _data: &AppState, _| match enabled {
+            true => TextBox::new()
+                .with_placeholder("Search in here")
+                .with_text_size(theme::TEXT_SIZE_SMALL)
+                .fix_width(theme::grid(18.0))
+                .padding((theme::grid(1.0), theme::grid(0.5)))
+                .lens(CommonCtxSearch)
+                .boxed(),
+            false => Empty.boxed(),
+        },
+    )
+}
+
+fn queue_panel_separator<T: Data>() -> impl Widget<T> {
+    const SEPARATOR_WIDTH: f64 = 1.0;
+    Painter::new(|ctx, _, env| {
+        let size = ctx.size();
+        let line = Line::new((0.5, 0.0), (0.5, size.height));
+        ctx.stroke(line, &env.get(theme::BORDER_DARK), 1.0);
+    })
+    .fix_width(SEPARATOR_WIDTH)
+}
+
+fn topbar_back_button_widget() -> impl Widget<AppState> {
+    let icon = icons::BACK.scale((10.0, theme::grid(2.0)));
+    let disabled = icon
+        .clone()
+        .with_color(theme::GREY_600)
+        .padding(theme::grid(1.0));
+    let enabled = icon
+        .padding(theme::grid(1.0))
+        .link()
+        .rounded(theme::BUTTON_BORDER_RADIUS)
+        .on_left_click(|ctx, _, _, _| {
+            ctx.submit_command(cmd::NAVIGATE_BACK.with(1));
+        })
+        .context_menu(history_menu);
+    Either::new(
+        |history: &Vector<Nav>, _| history.is_empty(),
+        disabled,
+        enabled,
+    )
+    .padding(theme::grid(1.0))
+    .lens(AppState::history)
+}
+
+fn history_menu(history: &Vector<Nav>) -> Menu<AppState> {
+    let mut menu = Menu::empty();
+
+    for (index, history) in history.iter().rev().take(10).enumerate() {
+        let skip_back_in_history_n_times = index + 1;
+        menu = menu.entry(
+            MenuItem::new(history.full_title())
+                .command(cmd::NAVIGATE_BACK.with(skip_back_in_history_n_times)),
+        );
+    }
+
+    menu
+}
+
+fn sorting_menu(app_state: &AppState) -> Menu<AppState> {
+    let mut menu = Menu::new("Sort by");
+
+    // Create menu items for sorting options
+    let mut sort_by_title = MenuItem::new("Title").command(cmd::SORT_BY_TITLE);
+    let mut sort_by_album = MenuItem::new("Album").command(cmd::SORT_BY_ALBUM);
+    let mut sort_by_date_added = MenuItem::new("Date Added").command(cmd::SORT_BY_DATE_ADDED);
+    let mut sort_by_duration = MenuItem::new("Duration").command(cmd::SORT_BY_DURATION);
+    let mut sort_by_artist = MenuItem::new("Artist").command(cmd::SORT_BY_ARTIST);
+
+    match app_state.config.sort_criteria {
+        SortCriteria::Title => sort_by_title = sort_by_title.selected(true),
+        SortCriteria::Album => sort_by_album = sort_by_album.selected(true),
+        SortCriteria::DateAdded => sort_by_date_added = sort_by_date_added.selected(true),
+        SortCriteria::Duration => sort_by_duration = sort_by_duration.selected(true),
+        SortCriteria::Artist => sort_by_artist = sort_by_artist.selected(true),
+    };
+
+    // Add the items and checkboxes to the menu
+    menu = menu.entry(sort_by_album);
+    menu = menu.entry(sort_by_artist);
+    menu = menu.entry(sort_by_date_added);
+    menu = menu.entry(sort_by_duration);
+    menu = menu.entry(sort_by_title);
+
+    menu
+}
+
+fn topbar_title_widget() -> impl Widget<AppState> {
+    Flex::row()
+        .cross_axis_alignment(CrossAxisAlignment::Center)
+        .with_flex_child(route_title_widget(), 1.0)
+        .with_spacer(theme::grid(0.5))
+        .with_child(route_icon_widget())
+        .lens(AppState::nav)
+}
+
+fn route_icon_widget() -> impl Widget<Nav> {
+    ViewSwitcher::new(
+        |nav: &Nav, _| nav.clone(),
+        |nav: &Nav, _, _| {
+            let icon = |icon: &SvgIcon| icon.scale(theme::ICON_SIZE_MEDIUM);
+            match &nav {
+                Nav::Home
+                    | Nav::Lyrics
+                    | Nav::SavedTracks
+                    | Nav::SavedAlbums
+                    | Nav::Playlists
+                    | Nav::Shows => Empty.boxed(),
+                Nav::SearchResults(_) | Nav::Recommendations(_) => icon(&icons::SEARCH).boxed(),
+                Nav::AlbumDetail(_, _) => icon(&icons::ALBUM).boxed(),
+                Nav::ArtistDetail(_) => icon(&icons::ARTIST).boxed(),
+                Nav::PlaylistDetail(_) => icon(&icons::PLAYLIST).boxed(),
+                Nav::ShowDetail(_) => icon(&icons::PODCAST).boxed(),
+            }
+        },
+    )
+}
+
+fn route_title_widget() -> impl Widget<Nav> {
+    Label::dynamic(|nav: &Nav, _| nav.title())
+        .with_line_break_mode(LineBreaking::Clip)
+        .with_font(theme::UI_FONT_MEDIUM)
+        .with_text_size(theme::TEXT_SIZE_LARGE)
+}
+
+fn compute_main_window_title(data: &AppState, _env: &Env) -> String {
+    if let Some(now_playing) = &data.playback.now_playing {
+        match &now_playing.item {
+            Playable::Track(track) => {
+                format!("{} - {}", track.artist_name(), track.name)
+            }
+            Playable::Episode(episode) => episode.name.to_string(),
+        }
+    } else {
+        "Spotifoss".to_owned()
+    }
+}

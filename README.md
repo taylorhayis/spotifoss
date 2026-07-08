@@ -1,15 +1,11 @@
 <div align="center">
   <img src="assets/logo.svg" alt="Spotifoss logo" width="96" height="96" />
   <h1>Spotifoss</h1>
-  <p>Fast, native Spotify client written in Rust — low overhead, clean UI, lightweight runtime (no Electron).</p>
-  <p>
-    <a href="https://github.com/skyline69/spotix">Upstream: Spotix</a>
-  </p>
+  <p>Fast, native Spotify client written in Rust — low overhead, clean UI, lightweight runtime (no Electron) and no AI or promotional bullshit.</p>
+
 </div>
 
-<img width="1917" height="1079" alt="image" src="https://github.com/user-attachments/assets/82fb24a9-62fd-4475-b59e-6804d3532e1a" />
-
-<img width="1922" height="1080" alt="image" src="https://github.com/user-attachments/assets/f993a6c5-9d96-48d4-a0ba-2e05d0bf2ec3" />
+<img width="1168" height="722" alt="Screenshot 2026-07-08 at 11 23 08" src="https://github.com/user-attachments/assets/089ede2d-516c-454f-8084-eda85a2c44d2" />
 
 
 ## Fork notice
@@ -32,36 +28,12 @@ Spotifoss is a fork of [Spotix](https://github.com/skyline69/spotix). Spotix its
 - Early development; expect missing features and rough edges
 - Requires a Spotify Premium account
 
-## Download
-
-GitHub Actions build and publish releases when changes land on `main`.
-Grab the latest installers from your project's Releases page when published.
-
-| Platform               | Artifact name              |
-| ---------------------- | -------------------------- |
-| Linux (x86_64)         | `spotifoss-linux-x86_64`   |
-| Linux (aarch64)        | `spotifoss-linux-aarch64`  |
-| Debian Package (amd64) | `spotifoss-amd64.deb`      |
-| Debian Package (arm64) | `spotifoss-arm64.deb`      |
-| macOS                  | `Spotifoss.dmg`            |
-| Windows                | `Spotifoss.exe`            |
-
 ## Build
 - Rust stable (1.65.0 or newer)
 
 ### Linux dependencies
 - Debian/Ubuntu: `sudo apt-get install libssl-dev libgtk-3-dev libcairo2-dev libasound2-dev`
 - RHEL/Fedora: `sudo dnf install openssl-devel gtk3-devel cairo-devel alsa-lib-devel`
-
-### OpenBSD (WIP)
-```shell
-doas pkg_add gtk+3 cairo llvm
-export LIBCLANG_PATH=/usr/local/lib
-```
-If you hit rustc memory errors while building gtk:
-```shell
-ulimit -d $(( 2 * `ulimit -d` ))
-```
 
 ### Install from source
 ```shell
@@ -72,9 +44,8 @@ cargo install --locked --path spotifoss-gui
 # --locked ensures the pinned dependency versions are used.
 ```
 
-### Optional Spotify Developer Client ID
-Spotifoss includes a default Spotify client ID, but heavy shared usage can trigger
-Spotify rate limits. If you see repeated 429 errors, create your own Spotify app:
+### Spotify Developer Client ID
+Spotifoss requires you to create your own Spotify app:
 
 1. Open the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
 2. Create an app and enable Web API access.
@@ -116,11 +87,6 @@ cargo bundle --release
 ### Full Caching support for maximum performance!
 
 <img width="407" height="452" alt="image" src="https://github.com/user-attachments/assets/f6fce925-6a01-4a2e-9ef5-4135fc864771" />
-
-### And some more
-- Up to date dependencies
-- Clean codebase
-- and much more...
 
 ## Built-in Themes
 
@@ -175,16 +141,10 @@ status_text_color = "#bac2de"
 ```
 - Select themes in Settings → General. Custom themes are listed by their `name`.
 
-## Project layout
-- `/spotifoss-core` core library (session, decoding, playback)
-- `/spotifoss-gui` GUI app (Druid) — binary name: `spotifoss`
-
 ## Privacy
 Spotifoss connects only to official Spotify servers.
 Credentials are not stored; a reusable token is used instead.
 Cached data is stored locally and can be deleted at any time.
-
-On first launch after renaming from Spotix, your existing settings are copied automatically from the old Spotix config folder.
 
 ## Credits
 - [Spotix](https://github.com/skyline69/spotix) — upstream fork this project is based on
